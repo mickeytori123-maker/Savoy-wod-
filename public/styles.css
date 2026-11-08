@@ -142,3 +142,21 @@ nav.tabs button.on{color:var(--orange)}
 .mrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #29242b;direction:ltr}
 .mrow:first-child{border-top:0}
 .mrow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+.controls{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
+.controls .filters button{padding:5px 12px;font-size:13px}
+.emailform{display:flex;flex-direction:column;gap:8px;width:min(340px,100%);text-align:right}
+.emailform input{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%}
+.tablewrap{margin-top:14px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.daytable{border-collapse:collapse;width:100%;font-size:14px}
+.daytable th,.daytable td{padding:9px 12px;border-top:1px solid #29242b;text-align:right;white-space:nowrap}
+.daytable thead th{border-top:0;color:var(--muted);font-weight:600;font-size:12.5px;position:sticky;top:0;background:var(--surface)}
+.daytable td b{font-family:var(--font-num);font-size:15px;font-variant-numeric:tabular-nums}
+.daytable td.nil{color:var(--faint)}
+.daytable tr.me td{background:rgba(255,106,19,.10)}
+.daytable th:first-child,.daytable td:first-child{position:sticky;right:0;background:var(--surface);z-index:1}
+.daytable tr.me td:first-child{background:#2a1d17}
+.tcell{display:flex;align-items:center;gap:8px}
+.tcell img{width:26px;height:26px;border-radius:50%}
+.tag.sm{min-width:22px;height:22px;font-size:12px;border-radius:6px;display:inline-grid;padding-inline:5px}
+a.linkbtn{color:var(--muted)}

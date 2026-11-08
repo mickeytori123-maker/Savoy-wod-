@@ -1,0 +1,30 @@
+name: Sync members from Arbox
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # every hour
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/344911784472/locations/global/workloadIdentityPools/github/providers/github
+          service_account: savoy-sync@savoy-wod.iam.gserviceaccount.com
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --omit=dev
+        working-directory: sync
+      - run: node sync-members.mjs
+        working-directory: sync
+        env:
+          ARBOX_API_KEY: ${{ secrets.ARBOX_API_KEY }}

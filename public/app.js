@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -16,7 +16,7 @@ const TYPES = {
   none:   {label:"ללא תוצאה", better:null}
 };
 
-const S = {uid:null,email:null,isCoach:false,ready:false,date:todayKey(),tab:"wod",
+const S = {uid:null,email:null,isCoach:false,ready:false,date:todayKey(),tab:"wod",gender:"all",mode:"parts",
   wods:{},results:{},users:{},members:[],filter:{},draft:null,unsubs:[]};
 
 /* ---------- helpers ---------- */
@@ -116,16 +116,41 @@ function weekStrip(){
     days+=`<button class="day ${k===S.date?"sel":""} ${k===today?"today":""} ${S.wods[k]?"has":""}" data-date="${k}" aria-label="${esc(heDate(k))}"><span class="dn">${d.toLocaleDateString("he-IL",{weekday:"short"})}</span><span class="dd">${d.getDate()}</span><span class="dot"></span></button>`}
   return `<div class="week"><button class="arrow" data-week="-7" aria-label="שבוע קודם">›</button><div class="days">${days}</div><button class="arrow" data-week="7" aria-label="שבוע הבא">‹</button></div>`;
 }
+function genderOk(e){return S.gender==="all"||S.users[e.uid]?.gender===S.gender}
+function viewControls(){
+  const g=[["all","כולם"],["male","גברים"],["female","נשים"]].map(([k,l])=>`<button data-gender="${k}" class="${S.gender===k?"on":""}">${l}</button>`).join("");
+  const m=[["parts","לפי חלקים"],["table","טבלת היום"]].map(([k,l])=>`<button data-mode="${k}" class="${S.mode===k?"on":""}">${l}</button>`).join("");
+  return `<div class="controls"><div class="filters">${m}</div><div class="filters">${g}</div></div>`;
+}
+function viewTable(w){
+  const parts=w.parts.filter(p=>p.type!=="none");
+  if(!parts.length)return '<div class="state">אין היום חלקים עם תוצאה.</div>';
+  const day=allEntries().filter(e=>e.wod===S.date&&genderOk(e));
+  const uids=[...new Set(day.map(e=>e.uid))];
+  if(!uids.length)return '<div class="state"><img src="'+EMBLEM+'" alt=""><h3>עוד אין תוצאות היום</h3><div>ברגע שמתאמנים יזינו תוצאות, הן יופיעו כאן בטבלה אחת.</div></div>';
+  const first=parts[0];
+  const val=(uid,p)=>day.find(e=>e.uid===uid&&e.part===p.id);
+  uids.sort((a,b)=>{const x=val(a,first),y=val(b,first);if(!x&&!y)return 0;if(!x)return 1;if(!y)return -1;if(!!y.rx!==!!x.rx)return y.rx?1:-1;return TYPES[first.type].better==="low"?x.value-y.value:y.value-x.value});
+  let h='<div class="tablewrap"><table class="daytable"><thead><tr><th>מתאמן/ת</th>'+parts.map(p=>`<th><span class="tag sm">${esc(p.label||"•")}</span> <span dir="auto">${esc(p.name)}</span></th>`).join("")+'</tr></thead><tbody>';
+  for(const uid of uids){
+    h+=`<tr class="${uid===S.uid?"me":""}"><td><div class="tcell"><img src="${avatarFor(uid)}" alt=""><span>${esc(nameFor(uid))}</span></div></td>`;
+    for(const p of parts){const e=val(uid,p);h+=e?`<td><b dir="ltr">${esc(fmt(p.type,e.value))}</b> <span class="badge ${e.rx?"rx":"sc"}">${e.rx?"RX":"SC"}</span></td>`:'<td class="nil">—</td>'}
+    h+="</tr>";
+  }
+  return h+"</tbody></table></div>";
+}
 function viewWod(){
   const w=S.wods[S.date];const isToday=S.date===todayKey();
   let h=weekStrip()+`<div class="dateline"><h1>${isToday?"היום":esc(heDate(S.date,{weekday:"long"}))}</h1><span class="t">${esc(heDate(S.date,{day:"numeric",month:"long",year:"numeric"}))}</span></div>`;
   if(!S.ready)return h+`<div class="state"><img src="${EMBLEM}" alt=""><h3>טוען את האימון…</h3></div>`;
   if(!w||!w.parts?.length)return h+`<div class="state"><img src="${EMBLEM}" alt=""><h3>עוד לא עלה אימון ליום הזה</h3><div>${S.isCoach?'אפשר להעלות אותו בלשונית "מאמן".':"האימון יופיע כאן ברגע שהמאמן יעלה אותו."}</div>${S.isCoach?'<div style="margin-top:12px"><button class="btn primary" data-tab="coach">העלאת אימון</button></div>':""}</div>`;
   if(w.title)h+=`<p class="wodtitle">${esc(w.title)}</p>`;
+  h+=viewControls();
+  if(S.mode==="table")return h+viewTable(w);
   h+='<div class="parts">';
   for(const p of w.parts){
     const list=rankEntries(entriesFor(S.date,p.id),p.type);const f=S.filter[p.id]||"all";
-    const shown=list.filter(e=>f==="all"||(f==="rx"?e.rx:!e.rx));const mine=list.find(e=>e.uid===S.uid);
+    const shown=list.filter(e=>genderOk(e)&&(f==="all"||(f==="rx"?e.rx:!e.rx)));const mine=list.find(e=>e.uid===S.uid);
     h+=`<section class="part"><div class="part-head"><span class="tag">${esc(p.label||"•")}</span><div><h2 dir="auto">${esc(p.name)}</h2><div class="ptype">${esc(TYPES[p.type]?.label||"")}</div></div></div>`;
     if(p.description)h+=`<div class="desc" dir="auto">${esc(p.description)}</div>`;
     if(p.type!=="none"){
@@ -219,6 +244,8 @@ document.addEventListener("click",async e=>{
   if(t.dataset.date){S.date=t.dataset.date;render();return}
   if(t.dataset.week){S.date=addDays(S.date,+t.dataset.week);render();return}
   if(t.dataset.goto){S.date=t.dataset.goto;S.tab="wod";render();window.scrollTo(0,0);return}
+  if(t.dataset.gender){S.gender=t.dataset.gender;render();return}
+  if(t.dataset.mode){S.mode=t.dataset.mode;render();return}
   if(t.dataset.filter){S.filter[t.dataset.filter]=t.dataset.f;render();return}
   if(t.dataset.log){openLog(t.dataset.log);return}
   if(S.tab==="coach")coachClick(t);
@@ -271,6 +298,23 @@ document.getElementById("google-btn").onclick=async()=>{
 };
 document.getElementById("switch-btn").onclick=()=>signOut(auth);
 getRedirectResult(auth).catch(()=>{});
+document.getElementById("email-toggle").onclick=()=>{document.getElementById("email-form").hidden=false;document.getElementById("email-toggle").hidden=true;document.getElementById("email-input").focus()};
+document.getElementById("email-form").onsubmit=async e=>{
+  e.preventDefault();const em=document.getElementById("email-input").value.trim().toLowerCase();const msg=document.getElementById("email-msg");
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){msg.textContent="צריך להזין כתובת מייל תקינה.";return}
+  const btn=e.target.querySelector("button");btn.disabled=true;
+  try{await sendSignInLinkToEmail(auth,em,{url:location.origin+location.pathname,handleCodeInApp:true});
+    try{localStorage.setItem("savoyEmail",em)}catch{}
+    msg.textContent=`שלחנו קישור כניסה ל-${em}. פתחו את המייל באותו מכשיר ולחצו על הקישור. אם הוא לא מגיע תוך דקה, בדקו בספאם.`}
+  catch(err){btn.disabled=false;msg.textContent=err?.code==="auth/quota-exceeded"?"הגענו למכסת המיילים היומית. נסו שוב מחר או היכנסו עם Google.":"שליחת הקישור לא הצליחה. בדקו את הכתובת ונסו שוב."}
+};
+if(isSignInWithEmailLink(auth,location.href)){
+  let em=null;try{em=localStorage.getItem("savoyEmail")}catch{}
+  if(em){signInWithEmailLink(auth,em,location.href).then(()=>{try{localStorage.removeItem("savoyEmail")}catch{};history.replaceState(null,"",location.pathname)}).catch(()=>showLogin("קישור הכניסה פג תוקף או כבר נוצל. בקשו קישור חדש."))}
+  else{document.getElementById("email-form").hidden=false;document.getElementById("email-toggle").hidden=true;document.getElementById("email-msg").textContent="הזינו שוב את המייל כדי להשלים את הכניסה.";
+    document.getElementById("email-form").onsubmit=async e=>{e.preventDefault();const v=document.getElementById("email-input").value.trim().toLowerCase();
+      try{await signInWithEmailLink(auth,v,location.href);history.replaceState(null,"",location.pathname)}catch{document.getElementById("email-msg").textContent="הכניסה לא הצליחה. ודאו שזה המייל שאליו נשלח הקישור."}}}
+}
 
 function showLogin(msg,canSwitch=false){
   document.getElementById("app").hidden=true;document.getElementById("login").hidden=false;
@@ -281,14 +325,15 @@ function stopListeners(){S.unsubs.forEach(u=>u());S.unsubs=[]}
 
 onAuthStateChanged(auth,async user=>{
   stopListeners();
-  if(!user){Object.assign(S,{uid:null,email:null,isCoach:false,ready:false,wods:{},results:{},users:{},members:[]});showLogin("אפליקציית התוצאות של CrossFit Savoy. נכנסים עם חשבון Google שרשום ב-Arbox.");return}
+  if(!user){Object.assign(S,{uid:null,email:null,isCoach:false,ready:false,wods:{},results:{},users:{},members:[]});showLogin("אפליקציית התוצאות של CrossFit Savoy. נכנסים עם Google, או עם המייל שרשום ב-Arbox.");return}
   S.uid=user.uid;S.email=(user.email||"").toLowerCase();
   let coach=false,member=false;
   try{coach=(await getDoc(doc(db,"coaches",S.email))).exists()}catch{}
-  if(!coach){try{member=(await getDoc(doc(db,"members",S.email))).exists()}catch{}}
-  if(!coach&&!member){showLogin(`החשבון ${S.email} עוד לא רשום כמתאמן ב-Savoy. בקשו מהמאמן להוסיף אותו, או היכנסו עם המייל שרשום אצלנו.`,true);return}
+  let gender="";
+  try{const md=await getDoc(doc(db,"members",S.email));member=md.exists();gender=md.data()?.gender||""}catch{}
+  if(!coach&&!member){showLogin(`החשבון ${S.email} עוד לא רשום כמתאמן ב-Savoy. אם נרשמתם לאחרונה, הגישה תיפתח תוך שעה. אפשר גם להיכנס עם המייל שרשום ב-Arbox.`,true);return}
   S.isCoach=coach;
-  await setDoc(doc(db,"users",S.uid),{name:user.displayName||S.email.split("@")[0],photo:user.photoURL||"",lastSeen:new Date().toISOString()},{merge:true}).catch(()=>{});
+  await setDoc(doc(db,"users",S.uid),{name:user.displayName||S.email.split("@")[0],photo:user.photoURL||"",gender:["male","female"].includes(gender)?gender:"",lastSeen:new Date().toISOString()},{merge:true}).catch(()=>{});
   document.getElementById("login").hidden=true;document.getElementById("app").hidden=false;
   render();
   let gotW=false,gotR=false;const done=()=>{if(gotW&&gotR&&!S.ready){S.ready=true}};
@@ -297,3 +342,5 @@ onAuthStateChanged(auth,async user=>{
   S.unsubs.push(onSnapshot(collection(db,"users"),snap=>{const u={};snap.forEach(d=>u[d.id]=d.data());S.users=u;if(S.tab!=="coach")render();else renderWho()}));
   if(coach)S.unsubs.push(onSnapshot(collection(db,"members"),snap=>{S.members=snap.docs.map(d=>d.id).sort();if(S.tab==="coach")render()}));
 });
+
+if(navigator.serviceWorker)navigator.serviceWorker.register("sw.js").catch(()=>{});

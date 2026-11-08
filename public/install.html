@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>התקנת Savoy WOD</title>
+<meta name="theme-color" content="#121013">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=Chakra+Petch:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+.inst{max-width:520px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px}
+.inst .logo{width:220px;align-self:center}
+.inst h1{margin:0;font-size:24px;text-align:center}
+.inst .lead{margin:0;color:var(--muted);text-align:center}
+.os{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.os button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px;font-weight:700;color:var(--muted)}
+.os button.on{background:var(--brand);color:#1a0d05;border-color:transparent}
+.steps{counter-reset:s;display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.steps li::before{content:counter(s);width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--surface-2);font-family:var(--font-num);font-weight:700;color:var(--amber)}
+.steps b{color:var(--fg)}
+.note{font-size:13px;color:var(--faint);text-align:center}
+.qr{align-self:center;background:#fff;padding:12px;border-radius:12px}
+.big{align-self:center;font-size:17px;padding:13px 26px}
+.share{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.url{direction:ltr;font-family:var(--font-num);color:var(--amber);text-align:center;font-size:18px}
+</style>
+</head>
+<body>
+<main class="inst">
+  <img class="logo" src="logo.png" alt="CrossFit Savoy">
+  <h1>מתקינים את Savoy WOD</h1>
+  <p class="lead">אימון היום, התוצאות שלכם ולוח התוצאות של הבוקס. בלי App Store ובלי Google Play, ההתקנה לוקחת חצי דקה.</p>
+  <button class="btn primary big" id="install-btn" type="button" hidden>התקנה עכשיו</button>
+  <div class="os" role="tablist">
+    <button type="button" data-os="ios">iPhone</button>
+    <button type="button" data-os="android">Galaxy / Android</button>
+  </div>
+  <ol class="steps" id="ios" hidden>
+    <li><div>פותחים את הקישור ב-<b>Safari</b>. אם הוא נפתח בתוך וואטסאפ או אינסטגרם, לוחצים על <b>⋯</b> ובוחרים <b>"פתיחה ב-Safari"</b>.</div></li>
+    <li><div>לוחצים על כפתור השיתוף <b>⬆︎</b> (ריבוע עם חץ למעלה) בתחתית המסך.</div></li>
+    <li><div>גוללים ובוחרים <b>"הוספה למסך הבית"</b>, ואז <b>"הוסף"</b>.</div></li>
+    <li><div>האייקון של Savoy מופיע במסך הבית. פותחים אותו ונכנסים עם Google או עם המייל שרשום ב-Arbox.</div></li>
+  </ol>
+  <ol class="steps" id="android" hidden>
+    <li><div>פותחים את הקישור ב-<b>Chrome</b> או ב-<b>Samsung Internet</b>.</div></li>
+    <li><div>אם מופיע כפתור <b>"התקנה עכשיו"</b> למעלה, לוחצים עליו וזהו.</div></li>
+    <li><div>אחרת לוחצים על התפריט <b>⋮</b> (או <b>☰</b> ב-Samsung Internet) ובוחרים <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b>.</div></li>
+    <li><div>האייקון של Savoy מופיע במסך הבית. פותחים אותו ונכנסים עם Google או עם המייל שרשום ב-Arbox.</div></li>
+  </ol>
+  <div class="url">savoy-wod.web.app</div>
+  <div class="qr" id="qr" aria-label="קוד QR לאפליקציה"></div>
+  <p class="note">אפשר לצלם את הקוד מהמחשב או מהשלט בבוקס.</p>
+  <a class="btn big" href="./">לאפליקציה</a>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const ua=navigator.userAgent;const isIOS=/iPhone|iPad|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+function show(os){document.getElementById("ios").hidden=os!=="ios";document.getElementById("android").hidden=os!=="android";document.querySelectorAll("[data-os]").forEach(b=>b.classList.toggle("on",b.dataset.os===os))}
+document.querySelectorAll("[data-os]").forEach(b=>b.onclick=()=>show(b.dataset.os));
+show(isIOS?"ios":"android");
+let deferred=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferred=e;document.getElementById("install-btn").hidden=false});
+document.getElementById("install-btn").onclick=async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;document.getElementById("install-btn").hidden=true};
+if(navigator.serviceWorker)navigator.serviceWorker.register("sw.js").catch(()=>{});
+try{new QRCode(document.getElementById("qr"),{text:"https://savoy-wod.web.app/install.html",width:180,height:180,colorDark:"#121013",colorLight:"#ffffff"})}catch{document.getElementById("qr").hidden=true}
+</script>
+</body>
+</html>
