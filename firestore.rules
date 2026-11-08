@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function myEmail() { return request.auth.token.email.lower(); }
+    function isCoach() { return signedIn() && exists(/databases/$(database)/documents/coaches/$(myEmail())); }
+    function isMember() { return signedIn() && (isCoach() || exists(/databases/$(database)/documents/members/$(myEmail()))); }
+
+    // Daily workouts: every member reads, only coaches publish.
+    match /wods/{date} {
+      allow read: if isMember();
+      allow write: if isCoach();
+    }
+    // One document per athlete holding all their results. Everyone sees the board; each writes only their own.
+    match /results/{uid} {
+      allow read: if isMember();
+      allow write: if (isMember() && request.auth.uid == uid) || isCoach();
+    }
+    // Display name and photo, written by each athlete at sign-in.
+    match /users/{uid} {
+      allow read: if isMember();
+      allow write: if isMember() && request.auth.uid == uid;
+    }
+    // Allowed athletes, keyed by lowercase email. Managed by coaches (later: synced from Arbox).
+    match /members/{email} {
+      allow read: if isCoach() || (signedIn() && email == myEmail());
+      allow write: if isCoach();
+    }
+    // Coaches are added from the Firebase console only.
+    match /coaches/{email} {
+      allow read: if signedIn() && (email == myEmail() || isCoach());
+      allow write: if false;
+    }
+  }
+}
