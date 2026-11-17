@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>Savoy WOD</title>
 <meta name="theme-color" content="#121013">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,12 +11,24 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="modulepreload" href="app.js">
+<link rel="modulepreload" href="parser.js">
+<link rel="modulepreload" href="firebase-config.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=Chakra+Petch:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
+<div id="boot" style="position:fixed;inset:0;display:grid;place-items:center;background:#121013"><img src="logo.png" alt="CrossFit Savoy" style="width:min(240px,60vw);animation:bootp 1.2s ease-in-out infinite alternate"></div>
+<style>@keyframes bootp{from{opacity:.55;transform:scale(.97)}to{opacity:1;transform:scale(1)}}@media (prefers-reduced-motion:reduce){#boot img{animation:none}}</style>
 <section class="login" id="login" hidden>
   <img src="logo.png" alt="CrossFit Savoy">
   <p id="login-msg">אפליקציית התוצאות של CrossFit Savoy. נכנסים עם חשבון Google שרשום ב-Arbox.</p>
