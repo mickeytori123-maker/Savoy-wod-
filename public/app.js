@@ -61,6 +61,7 @@ function nameFor(uid){const n=S.users[uid]?.name||"מתאמן/ת";return uid===S
 const ICON={
   wod:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>',
   me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  timer:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6M12 2v3"/></svg>',
   coach:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM13 7l4 4"/></svg>'
 };
 
@@ -123,16 +124,232 @@ function likeText(l){const e=(S.results[S.uid]||{})[l.wod+"__"+l.part];return `$
 let AC=null;
 function soundOn(){try{return localStorage.getItem("savoySound")!=="off"}catch{return true}}
 function unlockAudio(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==="suspended")AC.resume()}catch{AC=null}}
+// One bell-like note: a few partials (incl. the inharmonic 2.76x "bell" partial) with a fast attack and natural decay.
+function bell(ac,out,f,st,len,amp=1){
+  [[1,"sine",0.6],[2,"sine",0.18],[2.76,"sine",0.1],[4.07,"sine",0.04]].forEach(([h,type,a])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=f*h;
+    const l=len/(h>2?1.8:1);g.gain.setValueAtTime(0.0001,st);g.gain.exponentialRampToValueAtTime(a*amp,st+0.006);g.gain.exponentialRampToValueAtTime(0.0001,st+l);o.connect(g);g.connect(out);o.start(st);o.stop(st+l+0.05)});
+}
+// Soft low "thump" that gives the save a physical, landed feel.
+function thump(ac,out,st,amp=0.5){const o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.setValueAtTime(170,st);o.frequency.exponentialRampToValueAtTime(55,st+0.16);
+  g.gain.setValueAtTime(0.0001,st);g.gain.exponentialRampToValueAtTime(amp,st+0.008);g.gain.exponentialRampToValueAtTime(0.0001,st+0.2);o.connect(g);g.connect(out);o.start(st);o.stop(st+0.25)}
+function beepTone(ac,out,f,st,len,amp=0.5){const o=ac.createOscillator(),g=ac.createGain();o.type="square";o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,st);g.gain.exponentialRampToValueAtTime(amp,st+0.005);g.gain.setValueAtTime(amp,st+len-0.03);g.gain.exponentialRampToValueAtTime(0.0001,st+len);o.connect(g);g.connect(out);o.start(st);o.stop(st+len+0.02)}
+// kinds: save (result saved), pr (personal record), beep / go / end (timer). All respect the sound switch in settings.
 function chime(kind="save"){
   if(!soundOn())return;unlockAudio();const ac=AC;if(!ac)return;
-  const pr=kind==="pr";const t0=ac.currentTime+0.03;
-  const notes=pr?[523.25,659.25,783.99,1046.5,1318.51,1567.98]:[783.99,1174.66];
-  const master=ac.createGain();master.gain.value=pr?0.2:0.18;master.connect(ac.destination);
-  notes.forEach((f,i)=>{const st=t0+i*(pr?0.075:0.09);const len=pr?(i===notes.length-1?1.2:0.5):0.55;
-    [[1,"triangle",0.55],[2,"sine",0.12],[3,"sine",0.05]].forEach(([h,type,amp])=>{const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=f*h;
-      g.gain.setValueAtTime(0.0001,st);g.gain.exponentialRampToValueAtTime(amp,st+0.012);g.gain.exponentialRampToValueAtTime(0.0001,st+len);o.connect(g);g.connect(master);o.start(st);o.stop(st+len+0.05)})});
-  try{navigator.vibrate&&navigator.vibrate(pr?[30,50,30,50,90]:25)}catch{}
+  const t0=ac.currentTime+0.03;const master=ac.createGain();master.connect(ac.destination);
+  if(kind==="save"){
+    // "ka-ching": thump + two quick rising bell notes (B5 → E6), the second one ringing out
+    master.gain.value=0.32;thump(ac,master,t0,0.55);bell(ac,master,987.77,t0+0.01,0.35,0.8);bell(ac,master,1318.51,t0+0.1,0.9,1);
+    try{navigator.vibrate&&navigator.vibrate([18,40,28])}catch{}
+  }else if(kind==="pr"){
+    // fanfare: thump, rising major arpeggio, and a sparkle on top
+    master.gain.value=0.26;thump(ac,master,t0,0.6);
+    [523.25,659.25,783.99,1046.5,1318.51].forEach((f,i)=>bell(ac,master,f,t0+i*0.085,i===4?1.4:0.5,0.9));
+    [2093,2637,3136,2637,3136].forEach((f,i)=>bell(ac,master,f,t0+0.45+i*0.06,0.3,0.25));
+    try{navigator.vibrate&&navigator.vibrate([30,50,30,50,120])}catch{}
+  }else if(kind==="beep"){master.gain.value=0.22;beepTone(ac,master,880,t0,0.16)}
+  else if(kind==="go"){master.gain.value=0.25;beepTone(ac,master,1320,t0,0.55);try{navigator.vibrate&&navigator.vibrate(200)}catch{}}
+  else if(kind==="end"){master.gain.value=0.25;[0,0.28,0.56].forEach(d=>beepTone(ac,master,1320,t0+d,0.22));try{navigator.vibrate&&navigator.vibrate([200,80,200,80,400])}catch{}}
 }
+/* ---------- theme ---------- */
+function isDark(){return document.documentElement.dataset.theme==="dark"}
+function toggleTheme(){const dark=!isDark();if(dark)document.documentElement.dataset.theme="dark";else delete document.documentElement.dataset.theme;try{localStorage.setItem("savoyTheme",dark?"dark":"light")}catch{}}
+
+/* ---------- benchmark PRs (named metcons like "Fran", repeated over time) ---------- */
+const GENERIC_NAME=/^(metcon|wod|amrap|emom|e\d+mom|for ?time|rft|conditioning|finisher|accessor(y|ies)|skill|gymnastics|strength|weightlifting|warm[ -]?up|cool[ -]?down|tabata|intervals?|chipper|partner wod|team wod|אימון|מטקון|כוח|חימום|סקיל|אביזרים|חלק \d+|part [a-z0-9]+)$/i;
+function benchKey(e){if(!["time","reps","rounds"].includes(e.type))return "";const n=normName(curName(e));if(n.length<3||GENERIC_NAME.test(n)||CATS.some(c=>normName(c)===n))return "";return e.type+"|"+n}
+function isBenchBest(e){const k=benchKey(e);if(!k)return false;const en=S.results[S.uid]||{};let n=0;for(const key in en){const x=en[key];if(key===e.key||benchKey(x)!==k||!!x.rx!==!!e.rx)continue;n++;if(!better(e.type,e.value,x.value))return false}return n>0}
+function better(type,a,b){return TYPES[type]?.better==="low"?a<b:a>b}
+function prevBench(uid,e,exceptKey){const k=benchKey(e);if(!k)return null;let b=null;const en=S.results[uid]||{};
+  for(const key in en){if(key===exceptKey)continue;const x={...en[key],key};if(x.wod>e.wod)continue;if(benchKey(x)!==k||!!x.rx!==!!e.rx)continue;if(!b||better(e.type,x.value,b.value))b=x}
+  return b}
+
+/* ---------- personal stats ---------- */
+function weekOf(k){return addDays(k,-keyToDate(k).getDay())}
+function myStats(){
+  const en=Object.values(S.results[S.uid]||{});const today=todayKey();const month=today.slice(0,7),year=today.slice(0,4);
+  const days=new Set(en.map(e=>e.wod).filter(Boolean));
+  const monthCount=[...days].filter(d=>d.startsWith(month)).length;
+  const weeks=new Set([...days].map(weekOf));let w=weekOf(today);if(!weeks.has(w))w=addDays(w,-7);let streak=0;while(weeks.has(w)){streak++;w=addDays(w,-7)}
+  // count PRs set this year: walk results in date order and count every improvement over an earlier result
+  const best={};let prs=0;
+  for(const e of en.slice().sort((a,b)=>(a.wod+(a.ts||"")).localeCompare(b.wod+(b.ts||"")))){
+    let k="",up=false;
+    if(isWeightEntry(e)){k="w|"+normName(liftOfEntry(e));up=true}else{const b=benchKey(e);if(b){k="b|"+b+"|"+(e.rx?1:0)}}
+    if(!k)continue;const prev=best[k];
+    if(prev!=null&&(up?e.value>prev:better(e.type,e.value,prev))&&e.wod.startsWith(year))prs++;
+    if(prev==null||(up?e.value>prev:better(e.type,e.value,prev)))best[k]=e.value;
+  }
+  const likes=S.likesMine.filter(l=>l.by!==S.uid).length;
+  return {monthCount,streak,prs,likes};
+}
+function statsHTML(){
+  const s=myStats();
+  return `<div class="stats"><div class="stat"><b>${s.monthCount}</b><span>אימונים החודש</span></div><div class="stat"><b>${s.streak}</b><span>${s.streak===1?"שבוע ברצף":"שבועות ברצף"}</span></div><div class="stat"><b>${s.prs}</b><span>שיאים השנה</span></div><div class="stat"><b>${s.likes}</b><span>לייקים שקיבלת</span></div></div>`;
+}
+
+/* ---------- PR celebration ---------- */
+function celebrate({title,lift,value,prevText,key}){
+  const root=document.getElementById("fx-root");
+  root.innerHTML=`<div class="celebrate" id="cel"><canvas id="confetti"></canvas><div class="cel-card" role="dialog" aria-label="${esc(title)}"><div class="trophy">🏆</div><h2>${esc(title)}</h2><div class="lift" dir="auto">${esc(lift)}</div><div class="big">${esc(value)}</div>${prevText?`<div class="prev">${esc(prevText)}</div>`:""}
+    <div class="rowbtns">${key?`<button class="btn primary" data-share="${esc(key)}" data-sharepr="1">📸 שיתוף</button>`:""}<button class="btn" id="cel-close">סגירה</button></div></div></div>`;
+  const close=()=>{root.innerHTML=""};
+  document.getElementById("cel-close").onclick=close;document.getElementById("cel").onclick=e=>{if(e.target.id==="cel")close()};
+  if(!window.matchMedia("(prefers-reduced-motion: reduce)").matches)confetti(document.getElementById("confetti"));
+}
+function confetti(cv){
+  const dpr=Math.min(2,window.devicePixelRatio||1);const W=cv.width=innerWidth*dpr,H=cv.height=innerHeight*dpr;const ctx=cv.getContext("2d");
+  const cols=["#ff6a13","#ffb21a","#ff8a3d","#f2431f","#fff1c2","#ffd166"];
+  const ps=Array.from({length:150},()=>({x:W/2+(Math.random()-.5)*W*.2,y:H*.45,vx:(Math.random()-.5)*22*dpr,vy:(-Math.random()*22-8)*dpr,s:(5+Math.random()*7)*dpr,r:Math.random()*6,vr:(Math.random()-.5)*.3,c:cols[Math.random()*cols.length|0]}));
+  const t0=performance.now();
+  (function step(t){if(!cv.isConnected)return;const age=t-t0;ctx.clearRect(0,0,W,H);
+    for(const p of ps){p.vy+=0.55*dpr;p.vx*=0.99;p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.r);ctx.globalAlpha=Math.max(0,1-age/3200);ctx.fillStyle=p.c;ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);ctx.restore()}
+    if(age<3200)requestAnimationFrame(step);else ctx.clearRect(0,0,W,H)})(t0);
+}
+
+/* ---------- share a result as an image (Instagram story size) ---------- */
+function loadImg(src){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src})}
+function pill(c,x,y,w,h,r){c.beginPath();if(c.roundRect)c.roundRect(x,y,w,h,r);else{c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}c.fill()}
+function fitFont(ctx,text,weight,family,maxPx,maxW){let px=maxPx;do{ctx.font=`${weight} ${px}px ${family}`;if(ctx.measureText(text).width<=maxW)break;px-=4}while(px>24);return px}
+async function resultImage(key,pr){
+  const e=(S.results[S.uid]||{})[key];if(!e)return null;
+  await Promise.all(['700 200px "Chakra Petch"','800 64px Rubik','600 48px Rubik','400 40px Rubik'].map(f=>document.fonts.load(f).catch(()=>{})));
+  const logo=await loadImg("logo.png").catch(()=>null);
+  const W=1080,H=1920,cv=document.createElement("canvas");cv.width=W;cv.height=H;const c=cv.getContext("2d");
+  let g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,"#1f1517");g.addColorStop(1,"#0e0a0b");c.fillStyle=g;c.fillRect(0,0,W,H);
+  g=c.createRadialGradient(W/2,1000,40,W/2,1000,720);g.addColorStop(0,"rgba(255,106,19,.38)");g.addColorStop(1,"rgba(255,106,19,0)");c.fillStyle=g;c.fillRect(0,0,W,H);
+  {const b=c.createLinearGradient(0,0,W,0);b.addColorStop(0,"#ff8a3d");b.addColorStop(.4,"#ff6a13");b.addColorStop(1,"#ffb21a");c.fillStyle=b;c.fillRect(0,0,W,14)}
+  if(logo){const lw=560,lh=lw*logo.height/logo.width;c.drawImage(logo,(W-lw)/2,150,lw,lh)}
+  c.textAlign="center";c.direction="rtl";
+  c.fillStyle="#b5a9a6";c.font='400 42px Rubik';c.fillText(heDate(e.wod,{weekday:"long",day:"numeric",month:"long",year:"numeric"}),W/2,640);
+  const name=curName(e);c.fillStyle="#f4efe9";fitFont(c,name,800,"Rubik",76,940);c.fillText(name,W/2,760);
+  if(pr){c.font='800 56px Rubik';const t="🏆 שיא אישי חדש!";const tw=c.measureText(t).width+80;c.fillStyle="rgba(255,178,26,.16)";pill(c,(W-tw)/2,850,tw,96,48);c.fillStyle="#ffb21a";c.fillText(t,W/2,918)}
+  const score=fmt(e.type,e.value);c.direction="ltr";fitFont(c,score,700,'"Chakra Petch"',250,960);
+  const sg=c.createLinearGradient(W*.15,0,W*.85,0);sg.addColorStop(0,"#ff8a3d");sg.addColorStop(.45,"#ff6a13");sg.addColorStop(1,"#ffb21a");c.fillStyle=sg;c.fillText(score,W/2,1200);
+  if(entryUsesRx(e)){const t=e.rx?"RX":"SCALED";c.font='700 44px "Chakra Petch"';const tw=c.measureText(t).width+56;c.fillStyle=e.rx?"#4fd18b":"#7aa7ff";pill(c,(W-tw)/2,1270,tw,72,14);c.fillStyle=e.rx?"#10261a":"#0d1a33";c.fillText(t,W/2,1320)}
+  c.direction="rtl";
+  if(e.note){c.fillStyle="#c9bec0";fitFont(c,e.note,400,"Rubik",40,900);c.fillText(e.note,W/2,1430)}
+  c.fillStyle="#f4efe9";c.font='600 52px Rubik';c.fillText(S.users[S.uid]?.name||"",W/2,1600);
+  c.fillStyle="#8a7f86";c.font='400 34px Rubik';c.direction="ltr";c.fillText("CrossFit Savoy · savoy-wod.web.app",W/2,1800);
+  return await new Promise(ok=>cv.toBlob(ok,"image/png"));
+}
+async function openShare(key,pr){
+  document.getElementById("fx-root").innerHTML="";
+  const root=document.getElementById("sheet-root");
+  root.innerHTML=`<div class="scrim" id="scrim"><div class="sheet" dir="rtl" role="dialog" aria-label="שיתוף התוצאה"><h3>שיתוף התוצאה</h3><div class="sharepv" id="sh-pv"><div class="hint">מכינים את התמונה…</div></div>
+    <div class="rowbtns"><button class="btn primary" id="sh-go" style="flex:1" disabled>📤 שיתוף</button><button class="btn ghost" id="sh-close">סגירה</button></div></div></div>`;
+  const close=()=>{root.innerHTML=""};document.getElementById("sh-close").onclick=close;document.getElementById("scrim").onclick=e=>{if(e.target.id==="scrim")close()};
+  let blob=null;try{blob=await resultImage(key,pr)}catch(err){console.error("share image",err)}
+  const pv=document.getElementById("sh-pv"),go=document.getElementById("sh-go");if(!pv)return;
+  if(!blob){pv.innerHTML='<div class="err">לא הצלחנו ליצור את התמונה.</div>';return}
+  const url=URL.createObjectURL(blob);pv.innerHTML=`<img src="${url}" alt="תמונת התוצאה לשיתוף">`;
+  const file=new File([blob],"savoy-result.png",{type:"image/png"});const canShare=!!navigator.canShare?.({files:[file]});
+  go.disabled=false;go.textContent=canShare?"📤 שיתוף לאינסטגרם / וואטסאפ":"⬇️ שמירת התמונה";
+  // share() must run straight from the tap, so the image is prepared beforehand
+  go.onclick=()=>{if(canShare){navigator.share({files:[file],title:"Savoy WOD"}).catch(()=>{})}else{const a=document.createElement("a");a.href=url;a.download="savoy-result.png";document.body.appendChild(a);a.click();a.remove();toast("התמונה נשמרה")}};
+}
+
+/* ---------- workout timer ---------- */
+const TMODES={fortime:"For Time",amrap:"AMRAP",emom:"EMOM",intervals:"Tabata"};
+const TDEF={fortime:{cap:20},amrap:{mins:12},emom:{every:60,rounds:10},intervals:{work:20,rest:10,rounds:8}};
+let TCFG=(()=>{try{return JSON.parse(localStorage.getItem("savoyTimer")||"null")}catch{return null}})()||{mode:"amrap",...TDEF.amrap};
+let T=null; // running timer
+// Read timer settings out of a workout part's text ("AMRAP 12", "EMOM 10", "E2MOM 16", "Tabata", "Time cap 15").
+function timerFor(p){
+  if(!p||p.type==="load")return null;const t=(p.name+"\n"+(p.description||"")).replace(/’/g,"'");let m;
+  if(/\btabata\b/i.test(t))return {mode:"intervals",work:20,rest:10,rounds:8};
+  if((m=t.match(/\be(\d)mom\b[^\d\n]{0,6}(\d{1,2})/i))){const n=+m[1],tot=+m[2];return {mode:"emom",every:n*60,rounds:Math.max(1,Math.round(tot/n))}}
+  if((m=t.match(/\bemom\b[^\d\n]{0,6}(\d{1,2})/i))||(m=t.match(/(\d{1,2})\s*(?:min(?:ute)?s?|')\s*emom/i)))return {mode:"emom",every:60,rounds:+m[1]};
+  if((m=t.match(/\bamrap\b[^\d\n]{0,6}(\d{1,2})/i))||(m=t.match(/(\d{1,2})\s*(?:min(?:ute)?s?|')\s*amrap/i)))return {mode:"amrap",mins:+m[1]};
+  const cap=t.match(/(?:time\s*cap|\btc\b|\bcap\b)\s*:?\s*(\d{1,2})/i);
+  if(cap||/for\s*time|\brft\b|rounds?\s+for\b/i.test(t)||p.type==="time")return {mode:"fortime",cap:cap?+cap[1]:0};
+  return null;
+}
+function tTotal(c){return c.mode==="amrap"?c.mins*60:c.mode==="emom"?c.every*c.rounds:c.mode==="intervals"?(c.work+c.rest)*c.rounds-c.rest:(c.cap||0)*60}
+function mmss(s){s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+function viewTimer(){
+  const c=TCFG;const n=(id,label,val,min,max)=>`<label class="f">${label}<input type="number" inputmode="numeric" id="${id}" min="${min}" max="${max}" value="${val}"></label>`;
+  let f="";
+  if(c.mode==="fortime")f=n("t-cap","Time cap (דקות, 0 = בלי)",c.cap,0,90);
+  if(c.mode==="amrap")f=n("t-mins","משך (דקות)",c.mins,1,90);
+  if(c.mode==="emom")f=n("t-every","כל כמה שניות",c.every,10,600)+n("t-rounds","סבבים",c.rounds,1,99);
+  if(c.mode==="intervals")f=n("t-work","עבודה (שניות)",c.work,5,600)+n("t-rest","מנוחה (שניות)",c.rest,0,600)+n("t-rounds","סבבים",c.rounds,1,99);
+  const tot=tTotal(c);
+  return `<div class="section-h">טיימר לאימון</div><div class="card"><div class="tmodes">${Object.entries(TMODES).map(([k,l])=>`<button data-tmode="${k}" class="${c.mode===k?"on":""}">${l}</button>`).join("")}</div>
+    <div class="tfields">${f}</div><div class="tsum">${tot?`משך כולל: <b dir="ltr">${mmss(tot)}</b> · `:""}ספירה לאחור של 10 שניות לפני ההתחלה</div>
+    <button class="btn primary" data-tstart="1" style="padding:14px;font-size:17px">▶ התחלה</button></div>
+    <div class="hint" style="margin-top:10px">טיפ: באימון של היום יש כפתור ⏱ ליד חלקים עם AMRAP, EMOM, Tabata או Time cap, והטיימר נפתח מוגדר מראש.</div>`;
+}
+function syncTimerForm(){const g=id=>{const el=document.getElementById(id);return el?Math.max(+el.min||0,Math.min(+el.max||999,parseInt(el.value)||0)):null};
+  const c=TCFG;[["t-cap","cap"],["t-mins","mins"],["t-every","every"],["t-rounds","rounds"],["t-work","work"],["t-rest","rest"]].forEach(([id,k])=>{const v=g(id);if(v!=null)c[k]=v});
+  try{localStorage.setItem("savoyTimer",JSON.stringify(c))}catch{}}
+let wakeLock=null;
+async function keepAwake(on){try{if(on&&"wakeLock" in navigator)wakeLock=await navigator.wakeLock.request("screen");else if(!on&&wakeLock){await wakeLock.release();wakeLock=null}}catch{}}
+document.addEventListener("visibilitychange",()=>{if(T&&!T.done&&!T.pausedAt&&document.visibilityState==="visible")keepAwake(true)});
+function startTimer(cfg,link){
+  unlockAudio();
+  T={cfg:{...cfg},link:link||null,start:performance.now()+10000,paused:0,pausedAt:0,done:false,taps:0,lastSec:null,lastSeg:null};
+  keepAwake(true);renderTimerOv();T.iv=setInterval(tickTimer,100);tickTimer();
+}
+function stopTimer(){if(T){clearInterval(T.iv)}T=null;keepAwake(false);document.getElementById("timer-root").innerHTML=""}
+function timerState(){
+  const c=T.cfg;const now=T.pausedAt||performance.now();const t=(now-T.start-T.paused)/1000;
+  if(t<0)return {phase:"pre",label:"מתחילים בעוד",clock:Math.ceil(-t),left:-t,seg:"pre"};
+  const tot=tTotal(c);if(tot&&t>=tot)return {phase:"done",label:"סיום!",clock:c.mode==="fortime"?mmss(tot):"0:00",seg:"done"};
+  if(c.mode==="fortime")return {phase:"work",label:c.cap?`Time cap ${c.cap}:00`:"For Time",clock:mmss(Math.floor(t)),left:c.cap?tot-t:null,seg:"w"};
+  if(c.mode==="amrap")return {phase:"work",label:`AMRAP ${c.mins}`,clock:mmss(tot-t),left:tot-t,seg:"w"};
+  if(c.mode==="emom"){const i=Math.floor(t/c.every);const left=c.every-(t%c.every);return {phase:"work",label:`סבב ${i+1} / ${c.rounds}`,clock:mmss(left),left,seg:"e"+i}}
+  const cyc=c.work+c.rest;const i=Math.floor(t/cyc);const inC=t%cyc;const work=inC<c.work;const left=work?c.work-inC:cyc-inC;
+  return {phase:work?"work":"rest",label:`${work?"עבודה":"מנוחה"} · סבב ${i+1} / ${c.rounds}`,clock:mmss(left),left,seg:(work?"w":"r")+i};
+}
+function renderTimerOv(){
+  if(!T)return;const c=T.cfg;const counter=c.mode==="amrap"||c.mode==="fortime";
+  const linkPart=T.link?S.wods[T.link.date]?.parts?.find(p=>p.id===T.link.part):null;
+  document.getElementById("timer-root").innerHTML=`<div class="timer-ov pre" id="tov"><div class="tov-top"><span class="ttl">${esc(TMODES[c.mode])}${linkPart?` · <span dir="auto">${esc(linkPart.name)}</span>`:""}</span><button class="btn ghost sm" data-tstop="1" style="color:#b5a9a6;border-color:#3a3236">✕ סגירה</button></div>
+    <div class="tov-mid"><div class="tov-phase" id="tov-phase"></div><div class="tov-clock" id="tov-clock"></div><div class="tov-sub" id="tov-sub"></div>
+    ${counter?`<div class="tov-rounds"><button class="tov-round-btn" data-ttap="1">+1 סבב</button><span>סבבים: <b id="tov-taps">0</b></span></div>`:""}</div>
+    <div class="tov-bot" id="tov-bot"></div></div>`;
+}
+function tickTimer(){
+  if(!T)return;const s=timerState();const c=T.cfg;
+  const ov=document.getElementById("tov");if(!ov){clearInterval(T.iv);return}
+  ov.className="timer-ov "+(s.phase==="done"?"":s.phase);
+  document.getElementById("tov-phase").textContent=s.phase==="pre"?"מתכוננים":s.phase==="done"?"":s.phase==="rest"?"REST":"GO";
+  document.getElementById("tov-clock").textContent=s.clock;document.getElementById("tov-sub").textContent=s.label;
+  const tp=document.getElementById("tov-taps");if(tp)tp.textContent=T.taps;
+  // sounds: 3-2-1 beeps before each segment ends, a long tone when a segment starts, three tones at the end
+  if(!T.pausedAt&&s.phase!=="done"){
+    if(s.seg!==T.lastSeg){if(T.lastSeg!==null)chime("go");T.lastSeg=s.seg}
+    const sec=s.left!=null?Math.ceil(s.left):null;if(sec!==T.lastSec){if(sec!=null&&sec<=3&&sec>=1)chime("beep");T.lastSec=sec}
+  }
+  const bot=document.getElementById("tov-bot");
+  if(s.phase==="done"){
+    if(!T.done){T.done=true;clearInterval(T.iv);chime("end");keepAwake(false)}
+    const canLog=T.link&&(c.mode==="amrap"||c.mode==="fortime");
+    bot.innerHTML=`${canLog?`<button class="btn primary" data-tlog="1">הזנת תוצאה</button>`:""}<button class="btn" data-tagain="1">שוב</button><button class="btn" data-tstop="1">סיום</button>`;return;
+  }
+  const want=T.pausedAt?"paused":"running";if(bot.dataset.st===want)return;bot.dataset.st=want;
+  bot.innerHTML=T.pausedAt?`<button class="btn primary" data-tresume="1">▶ המשך</button><button class="btn" data-tagain="1">↺ מההתחלה</button>`
+    :`<button class="btn" data-tpause="1">⏸ השהיה</button>${c.mode==="fortime"?`<button class="btn primary" data-tfinish="1">✓ סיימתי</button>`:""}`;
+}
+function timerClick(t){
+  if(t.dataset.tstop){stopTimer();return true}
+  if(!T)return false;
+  if(t.dataset.ttap){T.taps++;chime("beep");tickTimer();return true}
+  if(t.dataset.tpause){T.pausedAt=performance.now();keepAwake(false);tickTimer();return true}
+  if(t.dataset.tresume){T.paused+=performance.now()-T.pausedAt;T.pausedAt=0;keepAwake(true);tickTimer();return true}
+  if(t.dataset.tagain){const {cfg,link}=T;stopTimer();startTimer(cfg,link);return true}
+  if(t.dataset.tfinish){T.pausedAt=performance.now();const el=(T.pausedAt-T.start-T.paused)/1000;T.finishAt=Math.max(1,Math.round(el));T.done=true;clearInterval(T.iv);chime("end");keepAwake(false);
+    document.getElementById("tov-clock").textContent=mmss(T.finishAt);document.getElementById("tov-sub").textContent="הזמן שלך";document.getElementById("tov").className="timer-ov";
+    document.getElementById("tov-bot").innerHTML=`${T.link?'<button class="btn primary" data-tlog="1">הזנת הזמן</button>':""}<button class="btn" data-tstop="1">סיום</button>`;return true}
+  if(t.dataset.tlog){const {link,cfg,taps,finishAt}=T;stopTimer();S.date=link.date;S.tab="wod";render();
+    const p=S.wods[link.date]?.parts?.find(x=>x.id===link.part);if(!p)return true;
+    let value=null;if(cfg.mode==="fortime"&&finishAt)value=finishAt;else if(p.type==="rounds"&&taps)value=taps*1000;
+    openLog(link.part,value);return true}
+  return false;
+}
+
 /* ---------- push notifications ---------- */
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 const standalone=window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
@@ -175,8 +392,8 @@ function openLikes(){
   const list=S.likesMine.filter(l=>l.by!==S.uid).sort((a,b)=>b.ts.localeCompare(a.ts)).slice(0,60);const seen=S.users[S.uid]?.likesSeen||"";
   document.getElementById("sheet-root").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" dir="rtl" role="dialog" aria-label="התראות"><h3>התראות</h3>
     <div id="pushcard-slot">${pushCardHTML()}</div>
-    <button class="linkbtn" data-togglesound="1" style="align-self:flex-start">${soundOn()?"🔊 צלילים: פועל":"🔇 צלילים: כבוי"}</button>
-    ${list.length?`<div class="hist">${list.map(l=>`<button class="hrow notif ${l.ts>seen?"new":""}" data-goto="${esc(l.wod)}" style="background:none;border:0;border-top:1px solid #29242b;text-align:right;width:100%"><div class="tcell"><img src="${avatarFor(l.by)}" alt=""><div><div class="p">❤️ ${esc(likeText(l))}</div><div class="d">${esc(heDate(l.wod,{weekday:"short",day:"numeric",month:"short"}))}</div></div></div></button>`).join("")}</div>`:'<div class="empty" style="padding:6px 0">עוד אין התראות. כשמישהו ייתן לייק לתוצאה שלך, זה יופיע כאן.</div>'}
+    <div class="rowbtns"><button class="linkbtn" data-togglesound="1">${soundOn()?"🔊 צלילים: פועל":"🔇 צלילים: כבוי"}</button><button class="linkbtn" data-toggletheme="1">${isDark()?"☀️ מעבר לתצוגה בהירה":"🌙 מעבר לתצוגה כהה"}</button></div>
+    ${list.length?`<div class="hist">${list.map(l=>`<button class="hrow notif ${l.ts>seen?"new":""}" data-goto="${esc(l.wod)}" style="background:none;border:0;border-top:1px solid var(--line2);text-align:right;width:100%"><div class="tcell"><img src="${avatarFor(l.by)}" alt=""><div><div class="p">❤️ ${esc(likeText(l))}</div><div class="d">${esc(heDate(l.wod,{weekday:"short",day:"numeric",month:"short"}))}</div></div></div></button>`).join("")}</div>`:'<div class="empty" style="padding:6px 0">עוד אין התראות. כשמישהו ייתן לייק לתוצאה שלך, זה יופיע כאן.</div>'}
     <div class="rowbtns"><button class="btn ghost" type="button" id="n-close">סגירה</button></div></div></div>`;
   const close=()=>document.getElementById("sheet-root").innerHTML="";
   document.getElementById("scrim").onclick=e=>{if(e.target.id==="scrim"||e.target.closest("[data-goto]"))close()};document.getElementById("n-close").onclick=close;
@@ -187,7 +404,7 @@ function render(skipSync){
   if(S.tab==="coach"&&!skipSync){syncDraft();syncWeek()}
   renderWho();renderTabs();
   const v=document.getElementById("view");
-  v.innerHTML=S.tab==="me"?viewMe():S.tab==="coach"?viewCoach():viewWod();
+  v.innerHTML=S.tab==="me"?viewMe():S.tab==="coach"?viewCoach():S.tab==="timer"?viewTimer():viewWod();
 }
 function renderWho(){
   const el=document.getElementById("who");
@@ -197,7 +414,7 @@ function renderWho(){
   el.querySelector("img").src=avatarFor(S.uid);
 }
 function renderTabs(){
-  const tabs=[["wod","אימון"],["me","התוצאות שלי"]];if(S.isCoach)tabs.push(["coach","מאמן"]);
+  const tabs=[["wod","אימון"],["timer","טיימר"],["me","התוצאות שלי"]];if(S.isCoach)tabs.push(["coach","מאמן"]);
   document.getElementById("tabs").innerHTML=tabs.map(([k,l])=>`<button data-tab="${k}" class="${S.tab===k?"on":""}">${ICON[k]}<span>${l}</span></button>`).join("");
 }
 function weekStrip(){
@@ -247,12 +464,12 @@ function viewWod(){
     if(p.description)h+=`<div class="desc" dir="auto">${esc(p.description)}</div>`;
     h+=pctBox(p);
     if(p.type!=="none"){
-      h+=`<div class="part-actions"><button class="btn ${mine?"":"primary"}" data-log="${esc(p.id)}">${mine?"עריכת התוצאה":"הזנת תוצאה"}</button>${mine?`<span class="mine-chip">שלי: <b dir="ltr">${esc(fmt(p.type,mine.value))}</b></span>`:""}</div>`;
+      h+=`<div class="part-actions"><button class="btn ${mine?"":"primary"}" data-log="${esc(p.id)}">${mine?"עריכת התוצאה":"הזנת תוצאה"}</button>${mine?`<span class="mine-chip">שלי: <b dir="ltr">${esc(fmt(p.type,mine.value))}</b></span><button class="btn ghost sm" data-share="${esc(mine.key)}" aria-label="שיתוף התוצאה">📸 שיתוף</button>`:""}${timerFor(p)?`<button class="btn ghost sm timer-link" data-timerpart="${esc(p.id)}" aria-label="טיימר לחלק הזה">⏱ טיימר</button>`:""}</div>`;
       h+=`<div class="board"><div class="board-head"><span>לוח תוצאות · ${list.length}</span>${rx?`<div class="filters">${["all","rx","sc"].map(k=>`<button data-filter="${esc(p.id)}" data-f="${k}" class="${f===k?"on":""}">${k==="all"?"הכול":k==="rx"?"RX":"Scaled"}</button>`).join("")}</div>`:""}</div>`;
       if(!shown.length)h+='<div class="empty">עוד אין תוצאות. תהיו הראשונים.</div>';
       shown.forEach((e,i)=>{h+=`<div class="row ${e.uid===S.uid?"me":""}"><span class="rank">${i+1}</span><img src="${avatarFor(e.uid)}" alt=""><div class="nm"><div class="n">${esc(nameFor(e.uid))}</div>${e.note?`<div class="note" dir="auto">${esc(e.note)}</div>`:""}</div><div class="score"><b>${esc(fmt(p.type,e.value))}</b>${rx?`<span class="badge ${e.rx?"rx":"sc"}">${e.rx?"RX":"SCALED"}</span>`:""}</div>${likeBtn(e.uid,p.id)}</div>`});
       h+="</div>";
-    }else h+='<div style="height:14px"></div>';
+    }else h+=timerFor(p)?`<div class="part-actions"><button class="btn ghost sm timer-link" data-timerpart="${esc(p.id)}">⏱ טיימר</button></div>`:'<div style="height:14px"></div>';
     h+="</section>";
   }
   return h+"</div>";
@@ -283,7 +500,7 @@ function viewMe(){
   const rmBtn='<button class="btn primary" data-addrm="">+ הוספת RM</button>';
   const pc=pushCardHTML();const pushTop=pc&&!pc.includes("pushcard ok")?`<div id="pushcard-slot" style="margin-top:12px">${pc}</div>`:"";
   if(!mine.length&&!recs.length)return pushTop+`<div class="state"><img src="${EMBLEM}" alt=""><h3>עוד אין תוצאות</h3><div>הזינו תוצאה באימון של היום, או הוסיפו את ה-1RM שלכם כדי שנחשב לכם משקלים לפי אחוזים.</div><div style="margin-top:12px">${rmBtn}</div></div>`;
-  let h=pushTop;
+  let h=pushTop+(mine.length?statsHTML():"");
   // working-weight PRs (Strength / Weightlifting only)
   const prs={};for(const e of mine){if(!isWeightEntry(e))continue;const lift=liftOfEntry(e);const k=normName(lift);if(!prs[k]||e.value>prs[k].value)prs[k]={...e,lift}}
   const prList=Object.values(prs).sort((a,b)=>b.value-a.value);
@@ -298,14 +515,14 @@ function viewMe(){
   }else h+='<div class="empty" style="padding:0 2px">עוד לא הוזן RM. הוסיפו 1RM, 2RM, 3RM או 5RM, והאפליקציה תחשב לכם משקלים כשיש אחוזים באימון.</div>';
   if(!mine.length)return h;
   mine.sort((a,b)=>a.wod<b.wod?1:a.wod>b.wod?-1:0);
-  h+='<div class="section-h">היסטוריה</div><div class="hist">'+mine.map(e=>`<button class="hrow" style="background:none;border:0;border-top:1px solid #29242b;text-align:right;width:100%" data-goto="${esc(e.wod)}"><div><div class="p" dir="auto">${esc(curName(e))}${isWeightEntry(e)&&bestWorking(S.uid,liftOfEntry(e))?.key===e.key?' <span class="prtag">PR</span>':""}</div><div class="d">${esc(heDate(e.wod,{weekday:"short",day:"numeric",month:"short"}))}${e.note?" · "+esc(e.note):""}</div></div><div class="score"><b>${esc(fmt(e.type,e.value))}</b>${entryUsesRx(e)?`<span class="badge ${e.rx?"rx":"sc"}">${e.rx?"RX":"SCALED"}</span>`:""}</div></button>`).join("")+"</div>";
+  h+='<div class="section-h">היסטוריה</div><div class="hist">'+mine.map(e=>`<button class="hrow" style="background:none;border:0;border-top:1px solid var(--line2);text-align:right;width:100%" data-goto="${esc(e.wod)}"><div><div class="p" dir="auto">${esc(curName(e))}${(isWeightEntry(e)&&bestWorking(S.uid,liftOfEntry(e))?.key===e.key)||isBenchBest(e)?' <span class="prtag">PR</span>':""}</div><div class="d">${esc(heDate(e.wod,{weekday:"short",day:"numeric",month:"short"}))}${e.note?" · "+esc(e.note):""}</div></div><div class="score"><b>${esc(fmt(e.type,e.value))}</b>${entryUsesRx(e)?`<span class="badge ${e.rx?"rx":"sc"}">${e.rx?"RX":"SCALED"}</span>`:""}</div></button>`).join("")+"</div>";
   return h;
 }
 function partNote(d,p){
   const n=entriesFor(d.date,p.id).length;if(!n)return "";
   const orig=S.wods[d.date]?.parts.find(o=>o.id===p.id);
   const warn=orig&&orig.type!==p.type?` שינוי סוג התוצאה ישבש את התוצאות האלה.`:"";
-  return `<div class="full hint" style="color:${warn?"#ff8a7a":"var(--good)"}">כבר נרשמו ${n} תוצאות לחלק הזה, והן יישמרו.${warn}</div>`;
+  return `<div class="full hint" style="color:${warn?"var(--danger)":"var(--good)"}">כבר נרשמו ${n} תוצאות לחלק הזה, והן יישמרו.${warn}</div>`;
 }
 function removedWithResults(d){const old=S.wods[d.date]?.parts||[];return old.filter(o=>!d.parts.some(p=>p.id===o.id)).map(o=>({o,n:entriesFor(d.date,o.id).length})).filter(x=>x.n)}
 function importBanner(){
@@ -357,9 +574,9 @@ function viewCoach(){
 }
 
 /* ---------- log sheet ---------- */
-function openLog(partId){
+function openLog(partId,preValue){
   const w=S.wods[S.date];const p=w?.parts.find(x=>x.id===partId);if(!p)return;
-  const key=S.date+"__"+p.id;const ex=(S.results[S.uid]||{})[key];const v=ex?.value;let inputs="";
+  const key=S.date+"__"+p.id;const ex=(S.results[S.uid]||{})[key];const v=preValue??ex?.value;let inputs="";
   const isAmrap=p.type==="reps"&&/amrap/i.test(p.name+" "+p.description);
   if(p.type==="time")inputs=`<div class="nums"><label class="f">דקות<input type="number" inputmode="numeric" min="0" id="l-a" value="${v!=null?Math.floor(v/60):""}"></label><span class="sep">:</span><label class="f">שניות<input type="number" inputmode="numeric" min="0" max="59" id="l-b" value="${v!=null?Math.round(v%60):""}"></label></div>`;
   else if(p.type==="rounds")inputs=`<div class="nums"><label class="f">סבבים<input type="number" inputmode="numeric" min="0" id="l-a" value="${v!=null?Math.floor(v/1000):""}"></label><span class="sep">+</span><label class="f">חזרות<input type="number" inputmode="numeric" min="0" id="l-b" value="${v!=null?Math.round(v%1000):""}"></label></div>`;
@@ -391,11 +608,16 @@ function openLog(partId){
     const prev=weight?bestWorking(S.uid,lift,key):null;
     const rmN=p.type==="load"?rmOf(p):0;const rmLift=lift||detectLift(p.name+"\n"+p.description)||p.name;
     const prevRM=rmN?rmRecords(S.uid).filter(r=>r.key!==key&&r.reps===rmN&&normName(r.lift)===normName(rmLift)).reduce((b,r)=>!b||r.value>b.value?r:b,null):null;
+    const prevB=weight?null:prevBench(S.uid,entry,key);
     const btn=form.querySelector("[type=submit]");btn.disabled=true;
     try{await saveMine({...(S.results[S.uid]||{}),[key]:entry});close();
-      const isPR=weight&&prev&&value>prev.value;const isRMPR=rmN&&(!prevRM||value>prevRM.value);chime(isPR||(rmN&&prevRM&&value>prevRM.value)?"pr":"save");
-      if(rmN&&isRMPR)toast(prevRM?`🏆 ${rmN}RM חדש ב-${rmLift}! ${fmt("load",value)} (הקודם: ${fmt("load",prevRM.value)})`:`💾 נשמר כ-${rmN}RM ב-${rmLift}: ${fmt("load",value)}`);
-      else if(isPR)toast(`🏆 שיא חדש ב-${lift}! ${fmt("load",value)} (הקודם: ${fmt("load",prev.value)})`);
+      const isPR=weight&&prev&&value>prev.value;const isRMPR=rmN&&(!prevRM||value>prevRM.value);const realRMPR=rmN&&prevRM&&value>prevRM.value;
+      const isBenchPR=!weight&&prevB&&better(p.type,value,prevB.value);
+      chime(isPR||realRMPR||isBenchPR?"pr":"save");
+      if(realRMPR)celebrate({title:`${rmN}RM חדש!`,lift:rmLift,value:fmt("load",value),prevText:`הקודם: ${fmt("load",prevRM.value)}`,key});
+      else if(isPR)celebrate({title:"שיא אישי חדש!",lift,value:fmt("load",value),prevText:`הקודם: ${fmt("load",prev.value)}`,key});
+      else if(isBenchPR)celebrate({title:"שיא אישי חדש!",lift:p.name+(usesRx(p)?(isRx?" · RX":" · Scaled"):""),value:fmt(p.type,value),prevText:`הקודם: ${fmt(p.type,prevB.value)} · ${heDate(prevB.wod,{day:"numeric",month:"short",year:"2-digit"})}`,key});
+      else if(rmN&&isRMPR)toast(`💾 נשמר כ-${rmN}RM ב-${rmLift}: ${fmt("load",value)}`);
       else if(weight&&!prev)toast(`נשמר. זה השיא הראשון שלך ב-${lift}`);
       else toast("התוצאה נשמרה 💪")}catch(err){btn.disabled=false;errEl.textContent=errMsg(err)}
   };
@@ -438,7 +660,13 @@ function errMsg(err){
 /* ---------- events ---------- */
 document.addEventListener("click",async e=>{
   const t=e.target.closest("button");if(!t)return;
+  if(timerClick(t))return;
   if(t.id==="logout"){await signOut(auth);return}
+  if(t.dataset.share){openShare(t.dataset.share,!!t.dataset.sharepr);return}
+  if(t.dataset.toggletheme){toggleTheme();t.textContent=isDark()?"☀️ מעבר לתצוגה בהירה":"🌙 מעבר לתצוגה כהה";return}
+  if(t.dataset.tmode){TCFG={mode:t.dataset.tmode,...TDEF[t.dataset.tmode]};try{localStorage.setItem("savoyTimer",JSON.stringify(TCFG))}catch{}render();return}
+  if(t.dataset.tstart){syncTimerForm();startTimer(TCFG,null);return}
+  if(t.dataset.timerpart){const p=S.wods[S.date]?.parts?.find(x=>x.id===t.dataset.timerpart);const c=timerFor(p);if(c){TCFG={...TDEF[c.mode],...c};startTimer(TCFG,{date:S.date,part:p.id})}return}
   if(t.id==="bell"){openLikes();return}
   if(t.dataset.enablepush){enablePush();return}
   if(t.dataset.togglesound){try{localStorage.setItem("savoySound",soundOn()?"off":"on")}catch{}t.textContent=soundOn()?"🔊 צלילים: פועל":"🔇 צלילים: כבוי";if(soundOn())chime();return}
@@ -467,6 +695,7 @@ function syncDraft(){
   document.querySelectorAll(".pedit").forEach(el=>{const p=d.parts[+el.dataset.i];if(!p)return;el.querySelectorAll("[data-k]").forEach(i=>p[i.dataset.k]=i.value)});
 }
 document.addEventListener("change",e=>{
+  if(S.tab==="timer"&&/^t-/.test(e.target.id||"")){syncTimerForm();render();return}
   if(e.target.dataset.wday!==undefined){syncWeek();render(true);return}
   if(e.target.id==="w-start"&&S.week){syncWeek();S.week.days=null;render(true);return}
   if(e.target.dataset.liftsel!==undefined&&e.target.value==="__other"&&S.draft){syncDraft();const p=S.draft.parts[+e.target.dataset.liftsel];if(p){p.lift="";p.liftOther=true}render(true);document.querySelector(`.pedit[data-i="${e.target.dataset.liftsel}"] [data-k=lift]`)?.focus();return}
@@ -566,16 +795,16 @@ onAuthStateChanged(auth,async user=>{
   document.getElementById("login").hidden=true;document.getElementById("app").hidden=false;document.getElementById("boot")?.remove();
   render();
   let gotW=false,gotR=false;const done=()=>{if(gotW&&gotR&&!S.ready){S.ready=true}};
-  S.unsubs.push(onSnapshot(collection(db,"wods"),snap=>{const w={};snap.forEach(d=>{const x=d.data();if(Array.isArray(x.parts))w[d.id]=x});S.wods=w;gotW=true;done();if(S.tab!=="coach")render();else renderTabs()}));
-  S.unsubs.push(onSnapshot(collection(db,"results"),snap=>{const r={},m={};snap.forEach(d=>{const x=d.data();r[d.id]=x.entries||{};m[d.id]=x.rms||{}});S.results=r;S.rms=m;gotR=true;done();if(S.tab!=="coach")render()}));
-  S.unsubs.push(onSnapshot(collection(db,"users"),snap=>{const u={};snap.forEach(d=>u[d.id]=d.data());S.users=u;if(S.tab!=="coach")render();else renderWho()}));
+  S.unsubs.push(onSnapshot(collection(db,"wods"),snap=>{const w={};snap.forEach(d=>{const x=d.data();if(Array.isArray(x.parts))w[d.id]=x});S.wods=w;gotW=true;done();if(S.tab!=="coach"&&S.tab!=="timer")render();else renderTabs()}));
+  S.unsubs.push(onSnapshot(collection(db,"results"),snap=>{const r={},m={};snap.forEach(d=>{const x=d.data();r[d.id]=x.entries||{};m[d.id]=x.rms||{}});S.results=r;S.rms=m;gotR=true;done();if(S.tab!=="coach"&&S.tab!=="timer")render()}));
+  S.unsubs.push(onSnapshot(collection(db,"users"),snap=>{const u={};snap.forEach(d=>u[d.id]=d.data());S.users=u;if(S.tab!=="coach"&&S.tab!=="timer")render();else renderWho()}));
   if(pushState()==="granted")setTimeout(()=>registerPush(true),2500);
   let firstLikes=true;
   S.unsubs.push(onSnapshot(query(collection(db,"likes"),where("owner","==",S.uid)),snap=>{
     const list=[];snap.forEach(x=>list.push(x.data()));
     if(!firstLikes){const prev=new Set(S.likesMine.map(l=>l.by+l.wod+l.part));const fresh=list.filter(l=>l.by!==S.uid&&!prev.has(l.by+l.wod+l.part));if(fresh.length)toast("❤️ "+likeText(fresh[fresh.length-1]))}
     firstLikes=false;S.likesMine=list;renderWho()},()=>{}));
-  if(coach)S.unsubs.push(onSnapshot(doc(db,"meta","import"),snap=>{S.importStatus=snap.exists()?snap.data():null;if(S.tab!=="me")render(S.tab==="coach")},()=>{}));
+  if(coach)S.unsubs.push(onSnapshot(doc(db,"meta","import"),snap=>{S.importStatus=snap.exists()?snap.data():null;if(S.tab==="wod"||S.tab==="coach")render(S.tab==="coach")},()=>{}));
   if(coach)S.unsubs.push(onSnapshot(collection(db,"members"),snap=>{S.members=snap.docs.map(d=>d.id).sort();if(S.tab==="coach")render()}));
 });
 

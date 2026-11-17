@@ -3,7 +3,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 firebase.initializeApp({apiKey:"AIzaSyBvoE1JUrWUvjdsn1NlmvMdtnQRTbeB34M",authDomain:"savoy-wod.firebaseapp.com",projectId:"savoy-wod",storageBucket:"savoy-wod.firebasestorage.app",messagingSenderId:"344911784472",appId:"1:344911784472:web:2a9bdbcaf245110905716d"});
 try{firebase.messaging()}catch(e){}
 
-const CACHE="savoy-v4";
+const CACHE="savoy-v5";
 const SHELL=["./","index.html","styles.css","app.js","parser.js","firebase-config.js","logo.png","emblem.png","manifest.webmanifest","icons/icon-192.png"];
 self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).catch(()=>{}))});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
