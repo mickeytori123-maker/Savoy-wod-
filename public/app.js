@@ -152,6 +152,12 @@ function chime(kind="save"){
   else if(kind==="go"){master.gain.value=0.25;beepTone(ac,master,1320,t0,0.55);try{navigator.vibrate&&navigator.vibrate(200)}catch{}}
   else if(kind==="end"){master.gain.value=0.25;[0,0.28,0.56].forEach(d=>beepTone(ac,master,1320,t0+d,0.22));try{navigator.vibrate&&navigator.vibrate([200,80,200,80,400])}catch{}}
 }
+/* ---------- class booking: the box's branded Arbox app ("X-Group") ---------- */
+const BOOK_IOS="https://apps.apple.com/il/app/x-group/id1612661434";
+const BOOK_ANDROID="https://play.google.com/store/search?q=X-Group%20Arbox&c=apps";
+function bookingHTML(){const url=isIOS?BOOK_IOS:BOOK_ANDROID;
+  return `<a class="booking" href="${url}" target="_blank" rel="noopener"><span class="bk-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg></span><span><b>הרשמה לשיעור</b><small>פותח את אפליקציית X-Group</small></span><span class="bk-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></span></a>`}
+
 /* ---------- theme ---------- */
 function isDark(){return document.documentElement.dataset.theme==="dark"}
 function toggleTheme(){const dark=!isDark();if(dark)document.documentElement.dataset.theme="dark";else delete document.documentElement.dataset.theme;try{localStorage.setItem("savoyTheme",dark?"dark":"light")}catch{}}
@@ -450,7 +456,7 @@ function viewWod(){
   const w=S.wods[S.date];const isToday=S.date===todayKey();
   let h=weekStrip()+`<div class="dateline"><h1>${isToday?"היום":esc(heDate(S.date,{weekday:"long"}))}</h1><span class="t">${esc(heDate(S.date,{day:"numeric",month:"long",year:"numeric"}))}</span></div>`;
   if(!S.ready)return h+`<div class="state"><img src="${EMBLEM}" alt=""><h3>טוען את האימון…</h3></div>`;
-  if(!w||!w.parts?.length)return h+`<div class="state"><img src="${EMBLEM}" alt=""><h3>עוד לא עלה אימון ליום הזה</h3><div>${S.isCoach?'אפשר להעלות אותו בלשונית "מאמן".':"האימון יופיע כאן ברגע שהמאמן יעלה אותו."}</div>${S.isCoach?'<div style="margin-top:12px"><button class="btn primary" data-tab="coach">העלאת אימון</button></div>':""}</div>`;
+  if(!w||!w.parts?.length)return h+`<div class="state"><img src="${EMBLEM}" alt=""><h3>עוד לא עלה אימון ליום הזה</h3><div>${S.isCoach?'אפשר להעלות אותו בלשונית "מאמן".':"האימון יופיע כאן ברגע שהמאמן יעלה אותו."}</div>${S.isCoach?'<div style="margin-top:12px"><button class="btn primary" data-tab="coach">העלאת אימון</button></div>':""}</div>`+bookingHTML();
   if(w.title)h+=`<p class="wodtitle">${esc(w.title)}</p>`;
   if(S.isCoach&&S.importStatus?.ok===false)h+=importBanner();
   if(S.isCoach)h+=`<div style="margin-top:10px"><button class="btn" data-editwod="1">✏️ עריכת האימון</button>${w.source==="arbox"?' <span class="hint">נמשך אוטומטית מ-Arbox</span>':""}</div>`;
@@ -472,7 +478,7 @@ function viewWod(){
     }else h+=timerFor(p)?`<div class="part-actions"><button class="btn ghost sm timer-link" data-timerpart="${esc(p.id)}">⏱ טיימר</button></div>`:'<div style="height:14px"></div>';
     h+="</section>";
   }
-  return h+"</div>";
+  return h+"</div>"+bookingHTML();
 }
 function pctLines(p){
   const out=[];const lines=((p.name||"")+"\n"+(p.description||"")).split("\n");
