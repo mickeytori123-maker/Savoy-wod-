@@ -21,3 +21,6 @@
 - `users/{uid}` – שם ותמונה
 - `members/{email}` – מתאמנים מורשים
 - `coaches/{email}` – מאמנים
+
+## בוט וואטסאפ
+בוט שעונה למתאמנים בוואטסאפ, מחובר ל-Arbox. ההוראות להקמה נמצאות ב-[functions/README.md](functions/README.md).

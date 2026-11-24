@@ -1,0 +1,20 @@
+{
+  "name": "savoy-whatsapp-bot",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "try:arbox": "node scripts/try-arbox.js",
+    "chat": "node scripts/chat.js",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
+    "firebase-admin": "^14.5.1",
+    "firebase-functions": "^7.4.0"
+  }
+}
