@@ -1,5 +1,6 @@
 // Firebase Cloud Function: WhatsApp webhook for the Savoy bot.
-// GET  = Meta's one-time webhook verification
+// Works with 360dialog (default) or Meta's Cloud API directly; both send the same payloads.
+// GET  = Meta's one-time webhook verification (Meta only)
 // POST = incoming messages → Claude (+ Arbox tools) → WhatsApp reply
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
@@ -9,15 +10,18 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "node:fs";
 import { createArbox, pickBestUser } from "./src/arbox.js";
-import { createWhatsApp, parseIncoming, verifySignature } from "./src/whatsapp.js";
+import { createWhatsApp, parseIncoming, parseStaffEchoes, webhookTokenOk } from "./src/whatsapp.js";
 import { buildSystemPrompt, handleMessage } from "./src/agent.js";
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const ARBOX_API_KEY = defineSecret("ARBOX_API_KEY");
+// 360dialog: the D360 API key. Meta: a permanent system-user access token.
 const WHATSAPP_TOKEN = defineSecret("WHATSAPP_TOKEN");
-const WHATSAPP_APP_SECRET = defineSecret("WHATSAPP_APP_SECRET");
-const WHATSAPP_VERIFY_TOKEN = defineSecret("WHATSAPP_VERIFY_TOKEN");
-const WHATSAPP_PHONE_NUMBER_ID = defineString("WHATSAPP_PHONE_NUMBER_ID");
+// A random string you make up; the webhook URL must end with ?token=<this>.
+const WEBHOOK_TOKEN = defineSecret("WEBHOOK_TOKEN");
+const WHATSAPP_PROVIDER = defineString("WHATSAPP_PROVIDER", { default: "360dialog" });
+// Meta only.
+const WHATSAPP_PHONE_NUMBER_ID = defineString("WHATSAPP_PHONE_NUMBER_ID", { default: "" });
 // Comma-separated staff numbers (e.g. 972521234567) that get handoff alerts.
 const STAFF_PHONES = defineString("STAFF_PHONES", { default: "" });
 const HANDOFF_HOURS = defineString("HANDOFF_HOURS", { default: "4" });
@@ -28,6 +32,9 @@ const db = getFirestore();
 const SESSION_IDLE_MS = 6 * 60 * 60 * 1000; // new conversation after 6h of silence
 const MAX_HISTORY = 60; // messages; start fresh beyond this to keep documents small
 const MEMBER_REFRESH_MS = 12 * 60 * 60 * 1000;
+// A staff reply from the phone pauses the bot only inside a live chat, so that
+// automatic messages (e.g. Arbox reminders from a linked device) don't silence it.
+const LIVE_CHAT_MS = 30 * 60 * 1000;
 
 function loadGymInfo() {
   const raw = readFileSync(new URL("./gym-info.md", import.meta.url), "utf8");
@@ -123,24 +130,39 @@ export const whatsappWebhook = onRequest(
     concurrency: 40,
     timeoutSeconds: 120,
     memory: "512MiB",
-    secrets: [ANTHROPIC_API_KEY, ARBOX_API_KEY, WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN],
+    secrets: [ANTHROPIC_API_KEY, ARBOX_API_KEY, WHATSAPP_TOKEN, WEBHOOK_TOKEN],
   },
   async (req, res) => {
     if (req.method === "GET") {
-      const ok = req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === WHATSAPP_VERIFY_TOKEN.value();
+      const ok = req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === WEBHOOK_TOKEN.value();
       return ok ? res.status(200).send(req.query["hub.challenge"]) : res.sendStatus(403);
     }
     if (req.method !== "POST") return res.sendStatus(405);
-    if (!verifySignature(req.rawBody, req.get("x-hub-signature-256"), WHATSAPP_APP_SECRET.value())) {
-      logger.warn("Bad webhook signature");
+    if (!webhookTokenOk(req, WEBHOOK_TOKEN.value())) {
+      logger.warn("Webhook call without a valid token");
       return res.sendStatus(401);
     }
 
     const deps = {
       arbox: createArbox({ apiKey: ARBOX_API_KEY.value() }),
-      wa: createWhatsApp({ token: WHATSAPP_TOKEN.value(), phoneNumberId: WHATSAPP_PHONE_NUMBER_ID.value() }),
+      wa: createWhatsApp({
+        provider: WHATSAPP_PROVIDER.value(),
+        token: WHATSAPP_TOKEN.value(),
+        phoneNumberId: WHATSAPP_PHONE_NUMBER_ID.value(),
+        baseUrl: process.env.WHATSAPP_BASE_URL || undefined,
+      }),
       client: new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() }),
     };
+
+    // Staff answered a customer from the phone: let the human take over.
+    for (const phone of parseStaffEchoes(req.body)) {
+      const ref = db.doc(`botConversations/${phone}`);
+      const conv = (await ref.get()).data();
+      if (conv?.lastMessageAt && Date.now() - conv.lastMessageAt.toMillis() < LIVE_CHAT_MS) {
+        await ref.set({ handoffUntil: new Date(Date.now() + Number(HANDOFF_HOURS.value()) * 3600 * 1000) }, { merge: true });
+        logger.info("Staff took over the chat", { phone });
+      }
+    }
 
     const jobs = parseIncoming(req.body).map(async (msg) => {
       // Meta retries webhooks; handle each message id once.

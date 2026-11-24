@@ -45,6 +45,21 @@ export function parseIncoming(payload) {
   return out;
 }
 
+/**
+ * Coexistence: messages the staff send from the WhatsApp Business app (or a linked
+ * device) arrive as "smb_message_echoes". Returns the customer numbers they went to.
+ */
+export function parseStaffEchoes(payload) {
+  const out = [];
+  for (const entry of payload?.entry || []) {
+    for (const change of entry.changes || []) {
+      if (change.field !== "smb_message_echoes") continue;
+      for (const m of change.value?.message_echoes || []) if (m.to) out.push(m.to);
+    }
+  }
+  return [...new Set(out)];
+}
+
 /** Build the WhatsApp message object for a reply with optional choices. */
 export function buildReply(to, { text, options = [], listButton = "אפשרויות" }) {
   const body = clip(text, options.length ? LIMITS.body : LIMITS.text);
@@ -92,11 +107,32 @@ export function buildReply(to, { text, options = [], listButton = "אפשרוי�
   };
 }
 
-export function createWhatsApp({ token = process.env.WHATSAPP_TOKEN, phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID, fetchImpl = fetch } = {}) {
+/** Where to send messages and how to authenticate, per provider. Both use Meta's Cloud API message format. */
+export function providerEndpoint({ provider = "360dialog", token, phoneNumberId, baseUrl }) {
+  if (provider === "360dialog") {
+    return {
+      url: `${baseUrl || "https://waba-v2.360dialog.io"}/messages`,
+      headers: { "D360-API-KEY": token },
+    };
+  }
+  if (provider === "meta") {
+    return { url: `${baseUrl || GRAPH}/${phoneNumberId}/messages`, headers: { Authorization: `Bearer ${token}` } };
+  }
+  throw new Error(`Unknown WhatsApp provider "${provider}" (use "360dialog" or "meta")`);
+}
+
+/** Webhook auth: the callback URL carries ?token=<secret> (works for both providers). */
+export function webhookTokenOk(req, secret) {
+  const got = String(req.query?.token || req.get?.("x-webhook-token") || "");
+  return Boolean(secret) && got.length === secret.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(secret));
+}
+
+export function createWhatsApp({ provider, token, phoneNumberId, baseUrl, fetchImpl = fetch } = {}) {
+  const endpoint = providerEndpoint({ provider, token, phoneNumberId, baseUrl });
   async function post(body) {
-    const res = await fetchImpl(`${GRAPH}/${phoneNumberId}/messages`, {
+    const res = await fetchImpl(endpoint.url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { ...endpoint.headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });

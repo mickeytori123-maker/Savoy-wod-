@@ -25,19 +25,27 @@
 
 ## הקמה
 
-### 1. חשבון WhatsApp Business API (בערך חצי שעה, פעם אחת)
-1. נכנסים ל-[business.facebook.com](https://business.facebook.com) ופותחים חשבון עסקי (Business Portfolio), אם עוד אין.
-2. נכנסים ל-[developers.facebook.com/apps](https://developers.facebook.com/apps) → **Create App** → סוג **Business** → מוסיפים את המוצר **WhatsApp**.
-3. ב-**WhatsApp → API Setup** מוסיפים את מספר הטלפון של העסק ומאמתים אותו ב-SMS.
-   - אם המספר כבר פעיל באפליקציית WhatsApp Business, Meta מציעים "coexistence", שמאפשר להמשיך להשתמש באפליקציה באותו מספר. אחרת, אפשר להשתמש במספר חדש לבוט.
-4. רושמים את **Phone number ID**.
-5. יוצרים **טוקן קבוע**: Business Settings → Users → **System users** → Add → Generate token, עם ההרשאות `whatsapp_business_messaging` ו-`whatsapp_business_management`.
-6. רושמים את **App Secret** מ-App settings → Basic.
-7. מוסיפים אמצעי תשלום ב-WhatsApp Manager. שיחות שהלקוח פותח (שירות) חינמיות ברובן.
+### 1. חיבור המספר הקיים ל-API, בלי לוותר על האפליקציה (Coexistence דרך 360dialog)
+המספר של העסק נשאר באפליקציית WhatsApp Business, והצוות ממשיך לענות ממנה. הבוט מקבל את אותן הודעות דרך ה-API.
+
+**לפני שמתחילים:**
+- לשאול את Arbox: *"האינטגרציה של וואטסאפ עובדת גם על מספר שמחובר ל-WhatsApp Cloud API במצב Coexistence?"*
+- לעדכן את אפליקציית WhatsApp Business לגרסה האחרונה.
+- לדעת שבזמן החיבור **כל המכשירים המקושרים מתנתקים** (WhatsApp Web, Arbox). אחר כך מקשרים אותם מחדש.
+
+**שלבים:**
+1. נרשמים ל-[360dialog](https://hub.360dialog.com) ובוחרים חיבור מספר קיים מאפליקציית WhatsApp Business (Coexistence).
+2. מתחברים עם חשבון הפייסבוק העסקי, ובסוף סורקים קוד QR מהאפליקציה: הגדרות ← מכשירים מקושרים, או לפי ההנחיה במסך.
+3. מאשרים סנכרון של היסטוריית השיחות (מומלץ).
+4. ב-360dialog Hub יוצרים **API key** למספר ושומרים אותו.
+5. **סורקים מחדש את ה-QR של Arbox:** הגדרות בית עסק ← אינטגרציות ← וואטסאפ. אם יש לכם WhatsApp Web, מקשרים גם אותו מחדש (WhatsApp ל-Windows לא נתמך במצב הזה, ולכן משתמשים בדפדפן).
+
+**מה משתנה במצב Coexistence:** אין "מחיקה לכולם", אין הודעות נעלמות, ואין אפשרות לתג הכחול. מכשיר מקושר שלא היה בשימוש 30 יום מתנתק.
 
 ### 2. מפתחות
 - **Anthropic API key**: מ-[platform.claude.com](https://platform.claude.com) → API keys.
 - **Arbox API key**: מנהל המערכת ב-Arbox (הגדרות → API), או דרך התמיכה של Arbox.
+- **WEBHOOK_TOKEN**: מחרוזת אקראית שאתם ממציאים, למשל עם הפקודה `openssl rand -hex 16`. היא מוודאת שרק 360dialog יכולים לשלוח הודעות לבוט.
 
 ### 3. העלאה ל-Firebase
 צריך את תוכנית **Blaze** (תשלום לפי שימוש) כדי להריץ Functions. בעסק בגודל של מכון העלות בדרך כלל זניחה.
@@ -45,23 +53,27 @@
 cd functions && npm install
 firebase functions:secrets:set ANTHROPIC_API_KEY
 firebase functions:secrets:set ARBOX_API_KEY
-firebase functions:secrets:set WHATSAPP_TOKEN
-firebase functions:secrets:set WHATSAPP_APP_SECRET
-firebase functions:secrets:set WHATSAPP_VERIFY_TOKEN   # מחרוזת אקראית שאתם ממציאים
+firebase functions:secrets:set WHATSAPP_TOKEN     # ה-API key של 360dialog
+firebase functions:secrets:set WEBHOOK_TOKEN
 firebase deploy --only functions
 ```
 בהעלאה הראשונה Firebase שואל על הערכים הבאים, והם נשמרים בקובץ `functions/.env.savoy-wod`:
-- `WHATSAPP_PHONE_NUMBER_ID`: מסעיף 1
+- `WHATSAPP_PROVIDER`: `360dialog` (ברירת המחדל). רק בחיבור ישיר ל-Meta כותבים `meta`
+- `WHATSAPP_PHONE_NUMBER_ID`: רק בחיבור ישיר ל-Meta. ב-360dialog משאירים ריק
 - `STAFF_PHONES`: מספרי הצוות שמקבלים התראות, בפורמט `972521234567`, מופרדים בפסיקים
 - `HANDOFF_HOURS`: כמה שעות הבוט שותק אחרי העברה לצוות (ברירת מחדל: 4)
 
 ### 4. חיבור ה-webhook
-ב-Meta: WhatsApp → **Configuration** → Webhook:
-- **Callback URL**: הכתובת שהדפיס `firebase deploy` (נגמרת ב-`whatsappWebhook`)
-- **Verify token**: אותה מחרוזת של `WHATSAPP_VERIFY_TOKEN`
-- **Webhook fields**: מסמנים `messages`
+לוקחים את הכתובת ש-`firebase deploy` הדפיס (נגמרת ב-`whatsappWebhook`), מוסיפים לה `?token=` ואת ה-WEBHOOK_TOKEN, ומריצים:
+```bash
+D360_API_KEY=... node scripts/set-360dialog-webhook.js "https://...whatsappWebhook?token=<WEBHOOK_TOKEN>"
+```
+זהו. שלחו הודעה מטלפון אחר למספר של העסק ובדקו שהבוט עונה.
 
-זהו. שלחו הודעה למספר ובדקו שהבוט עונה.
+> בחיבור ישיר ל-Meta במקום 360dialog: ב-WhatsApp → Configuration מגדירים את אותה כתובת (עם `?token=`), את אותו טוקן כ-Verify token, ומסמנים את `messages` ואת `smb_message_echoes`.
+
+### כשהצוות עונה מהטלפון
+אם מישהו מהצוות עונה ללקוח מהאפליקציה בזמן שיחה פעילה (חצי השעה האחרונה), הבוט מזהה את זה ושותק מול אותו לקוח למשך `HANDOFF_HOURS`. הודעות אוטומטיות של Arbox, שנשלחות מחוץ לשיחה פעילה, לא משתיקות את הבוט.
 
 ## הגדרות אופציונליות (משתני סביבה)
 | משתנה | ברירת מחדל | |
@@ -70,6 +82,7 @@ firebase deploy --only functions
 | `BOT_EFFORT` | `low` | עומק החשיבה (`low`/`medium`/`high`). אם התשובות שטחיות, מעלים ל-`medium` |
 | `BOT_HIDDEN_PLANS` | `צוות` | שמות מנויים שהבוט לא יציע ללקוחות, מופרדים בפסיקים |
 | `ARBOX_API_KEY_HEADER` | `apiKey` | שם ה-header של המפתח ב-Arbox |
+| `WHATSAPP_BASE_URL` | לפי הספק | כתובת ה-API של ספק הוואטסאפ, אם היא שונה מברירת המחדל |
 
 ## הערות
 - **התראות לצוות:** וואטסאפ מאפשר לשלוח הודעה חופשית רק למי שכתב למספר של הבוט ב-24 השעות האחרונות. כדי שההתראות יגיעו בכל זמן, כל איש צוות צריך לשלוח לבוט הודעה מדי פעם, או שמגדירים תבנית הודעה (template) מאושרת. בכל מקרה, כל העברה לצוות נשמרת גם ב-Firestore באוסף `botHandoffs`.

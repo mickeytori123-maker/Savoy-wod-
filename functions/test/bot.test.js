@@ -150,3 +150,48 @@ test("refusal sends a safe message and hands off", async () => {
   assert.equal(res.handoff, true);
   assert.equal(sent.length, 1);
 });
+
+// --- providers ---
+import { providerEndpoint, webhookTokenOk } from "../src/whatsapp.js";
+
+test("360dialog sends to its own endpoint with the D360 key", () => {
+  const e = providerEndpoint({ provider: "360dialog", token: "k" });
+  assert.equal(e.url, "https://waba-v2.360dialog.io/messages");
+  assert.deepEqual(e.headers, { "D360-API-KEY": "k" });
+});
+
+test("Meta sends to the Graph API with a bearer token", () => {
+  const e = providerEndpoint({ provider: "meta", token: "t", phoneNumberId: "123" });
+  assert.match(e.url, /graph\.facebook\.com\/v\d+\.\d+\/123\/messages$/);
+  assert.equal(e.headers.Authorization, "Bearer t");
+  assert.throws(() => providerEndpoint({ provider: "other" }));
+});
+
+test("webhook requires the shared token", () => {
+  const req = (q, h = {}) => ({ query: q, get: (n) => h[n] });
+  assert.equal(webhookTokenOk(req({ token: "abc" }), "abc"), true);
+  assert.equal(webhookTokenOk(req({}, { "x-webhook-token": "abc" }), "abc"), true);
+  assert.equal(webhookTokenOk(req({ token: "abd" }), "abc"), false);
+  assert.equal(webhookTokenOk(req({}), "abc"), false);
+  assert.equal(webhookTokenOk(req({ token: "" }), ""), false);
+});
+
+test("createWhatsApp posts the Cloud API body to the provider", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => { calls.push({ url, init }); return { ok: true, json: async () => ({}) }; };
+  const { createWhatsApp } = await import("../src/whatsapp.js");
+  const wa = createWhatsApp({ provider: "360dialog", token: "k", fetchImpl });
+  await wa.send("972500000000", { text: "שלום" });
+  assert.equal(calls[0].url, "https://waba-v2.360dialog.io/messages");
+  assert.equal(calls[0].init.headers["D360-API-KEY"], "k");
+  assert.equal(JSON.parse(calls[0].init.body).text.body, "שלום");
+});
+
+test("staff echoes (coexistence) are detected, customer messages are not", async () => {
+  const { parseStaffEchoes } = await import("../src/whatsapp.js");
+  const payload = { entry: [{ changes: [
+    { field: "smb_message_echoes", value: { message_echoes: [{ from: "972511111111", to: "972500000000", type: "text", text: { body: "אני מטפל" } }] } },
+    { field: "messages", value: { messages: [{ id: "x", from: "972522222222", type: "text", text: { body: "hi" } }] } },
+  ] }] };
+  assert.deepEqual(parseStaffEchoes(payload), ["972500000000"]);
+});
