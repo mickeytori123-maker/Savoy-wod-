@@ -103,7 +103,7 @@ export const TOOLS = [
 ];
 
 export function buildSystemPrompt(gymInfo) {
-  return `You are the WhatsApp assistant of CrossFit Savoy, a CrossFit gym in Tel Aviv. You talk with members and people interested in joining.
+  return `You are the WhatsApp assistant of CrossFit Savoy, a CrossFit gym in Holon (HaRokmim 40). You talk with members and people interested in joining.
 
 How to behave:
 - Write in the member's language (usually Hebrew). Short WhatsApp messages, warm and to the point, at most one or two emojis.
