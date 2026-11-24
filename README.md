@@ -23,4 +23,4 @@
 - `coaches/{email}` – מאמנים
 
 ## בוט וואטסאפ
-בוט שעונה למתאמנים בוואטסאפ, מחובר ל-Arbox. ההוראות להקמה נמצאות ב-[functions/README.md](functions/README.md).
+בוט שעונה למתאמנים בוואטסאפ, מחובר ל-Arbox. הקמה: `bash functions/setup.sh` (פרטים ב-[functions/README.md](functions/README.md)).
